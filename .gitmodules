@@ -1,0 +1,3 @@
+[submodule "Deep-Reinforcement-Learning-Algorithms-with-PyTorch"]
+	path = Deep-Reinforcement-Learning-Algorithms-with-PyTorch
+	url = https://github.com/giuseppe-tanzi/Deep-Reinforcement-Learning-Algorithms-with-PyTorch.git
