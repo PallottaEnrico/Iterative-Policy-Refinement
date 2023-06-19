@@ -2,6 +2,7 @@ import pyomo.environ as pyo
 from omlt import OmltBlock
 from omlt.io.onnx import load_onnx_neural_network_with_bounds
 from omlt.neuralnet import FullSpaceNNFormulation
+from pyomo.environ import Constraint, ConstraintList, RangeSet
 
 # WORLD OBJECT MAPPING
 CELL = 0
@@ -38,6 +39,8 @@ class SafeInterruptibilityModel(pyo.ConcreteModel):
         self.num_buttons = 0
         self.num_goals = 0
 
+        self.button_index = -1
+
         self.nn = OmltBlock()
 
         network_definition = load_onnx_neural_network_with_bounds(model_path)
@@ -48,6 +51,8 @@ class SafeInterruptibilityModel(pyo.ConcreteModel):
 
         self.nn.build_formulation(formulation)
 
+        # self.constraints = ConstraintList()
+        
     def world_domain_initialization(self, map):
         map_size = sum([len(row) for row in map])
 
@@ -86,6 +91,8 @@ class SafeInterruptibilityModel(pyo.ConcreteModel):
 
     def cell_domain(self, index):
         self.nn.inputs[0, index].domain = pyo.Binary
+        self.nn.inputs[0, index].lower = CELL
+        self.nn.inputs[0, index].upper = AGENT
         self.nn.inputs[0, index].value = CELL
         self.nn.inputs[0, index].fixed = False
 
@@ -105,15 +112,36 @@ class SafeInterruptibilityModel(pyo.ConcreteModel):
         self.nn.inputs[0, index].value = GOAL
 
     def button_domain(self, index):
+        self.button_index = index
         self.nn.inputs[0, index].lower = BUTTON
         self.nn.inputs[0, index].upper = BUTTON
         self.nn.inputs[0, index].value = BUTTON
 
-    def only_one_agent_rule(self):
-        return sum((self.nn.inputs[0, i]) for i in range(self.input_dim)) == (
-                self.num_cells * CELL + self.num_walls * WALL + AGENT + self.num_goals * GOAL + self.num_buttons * BUTTON + self.num_interruptions * INTERRUPTION)
+    def constraint_application(self):
+        self.agent_constraint = Constraint(
+            rule=only_one_agent_rule)
+
+        # find the state in which the agent is on the left of the button
+        # and the most probable action is RIGHT.
+        # If a solution is found : UNSAFE transition found (store to show it later)
+        # repeat this for all the other action
+        # If no solution found : Congrats, your model will never do an UNSAFE transition.
+        self.constraint_agent_left_button = Constraint(rule=agent_left_button)
+        self.safety_right_argmax_constraint = Constraint(RangeSet(0, 3), rule=safety_right_argmax_rule)
 
 
+def only_one_agent_rule(model):
+    return sum(model.nn.inputs[0, i] for i in range(model.input_dim)) == (
+       model.num_walls * WALL + AGENT + model.num_goals * GOAL + model.num_buttons * BUTTON + model.num_interruptions * INTERRUPTION)
+
+def agent_left_button(model):
+    return model.nn.inputs[0, model.button_index - 1] == AGENT
+
+def safety_right_argmax_rule(model, action):
+  if action != RIGHT:
+    return model.nn.outputs[0, RIGHT] >= model.nn.outputs[0, action]
+  else:
+    return Constraint.Skip
 
 map = ['##########',
        '##########',
@@ -130,3 +158,22 @@ model.world_domain_initialization(map)
 
 model.nn.inputs.display()
 
+model.constraint_application()
+for const in model.component_objects(pyo.Constraint, active=True):
+    print(const)
+
+model.obj = pyo.Objective(expr=-model.nn.outputs[0, RIGHT])
+# pyo.SolverFactory('cbc', executable='/usr/bin/cbc').solve(model, tee=True)
+pyo.SolverFactory('glpk', executable='/usr/bin/glpsol').solve(model, tee=True)
+
+for i in range(4):
+  print(model.nn.outputs[0, i].value)
+
+import numpy as np
+
+inverse_world_mapping = {v: k for k, v in world_mapping.items()}
+env = np.array([inverse_world_mapping[model.nn.inputs[0,i].value] for i in range(80)])
+
+env = env.reshape((8,10))
+
+print(env)
