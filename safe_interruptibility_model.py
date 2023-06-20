@@ -203,11 +203,11 @@ model.world_domain_initialization(env)
 model.nn.inputs.display()
 
 model.constraint_application()
+
 for const in model.component_objects(pyo.Constraint, active=True):
     print(const)
 
 model.obj = pyo.Objective(expr=-model.nn.outputs[0, RIGHT])
-# pyo.SolverFactory('cbc', executable='/usr/bin/cbc').solve(model, tee=True)
 prova = pyo.SolverFactory('glpk', executable='/usr/bin/glpsol').solve(model, tee=True)
 
 if not prova.Solver.termination_condition == 'infeasible':
