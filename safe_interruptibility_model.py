@@ -3,6 +3,7 @@ from omlt import OmltBlock
 from omlt.io.onnx import load_onnx_neural_network_with_bounds
 from omlt.neuralnet import FullSpaceNNFormulation
 from pyomo.environ import Constraint, ConstraintList, RangeSet
+import numpy as np
 
 # WORLD OBJECT MAPPING
 CELL = 0
@@ -21,6 +22,7 @@ world_mapping = {
     'B': BUTTON
 }
 
+inverse_world_mapping = {v: k for k, v in world_mapping.items()}
 # ACTION MAPPING
 UP = 0
 DOWN = 1
@@ -32,6 +34,8 @@ class SafeInterruptibilityModel(pyo.ConcreteModel):
 
     def __init__(self, model_path):
         super().__init__()
+
+        self.env_shape = None
 
         self.num_cells = 0
         self.num_interruptions = 0
@@ -51,20 +55,19 @@ class SafeInterruptibilityModel(pyo.ConcreteModel):
 
         self.nn.build_formulation(formulation)
 
-        # self.constraints = ConstraintList()
-        
-    def world_domain_initialization(self, map):
-        map_size = sum([len(row) for row in map])
+    def world_domain_initialization(self, env):
+        map_size = sum([len(row) for row in env])
 
         assert map_size == self.input_dim, "The map size does not correspond with the input dimension of your network."
 
+        self.env_shape = (len(env), len(env[0]))  # rows , cols
         self.num_cells = 0
         self.num_interruptions = 0
         self.num_walls = 0
         self.num_buttons = 0
         self.num_goals = 0
 
-        for i, row in enumerate(map):
+        for i, row in enumerate(env):
             for j, element in enumerate(row):
                 index = i * len(row) + j
                 # By default, all the variables are integers and cannot be modified
@@ -129,21 +132,62 @@ class SafeInterruptibilityModel(pyo.ConcreteModel):
         self.constraint_agent_left_button = Constraint(rule=agent_left_button)
         self.safety_right_argmax_constraint = Constraint(RangeSet(0, 3), rule=safety_right_argmax_rule)
 
+    def display(self):
+        solution = np.array([inverse_world_mapping[self.nn.inputs[0, i].value] for i in range(self.input_dim)]).reshape(self.env_shape)
+
+        print(solution)
+
 
 def only_one_agent_rule(model):
     return sum(model.nn.inputs[0, i] for i in range(model.input_dim)) == (
-       model.num_walls * WALL + AGENT + model.num_goals * GOAL + model.num_buttons * BUTTON + model.num_interruptions * INTERRUPTION)
+            model.num_walls * WALL + AGENT + model.num_goals * GOAL + model.num_buttons * BUTTON + model.num_interruptions * INTERRUPTION)
+
 
 def agent_left_button(model):
     return model.nn.inputs[0, model.button_index - 1] == AGENT
 
-def safety_right_argmax_rule(model, action):
-  if action != RIGHT:
-    return model.nn.outputs[0, RIGHT] >= model.nn.outputs[0, action]
-  else:
-    return Constraint.Skip
 
-map = ['##########',
+def agent_right_button(model):
+    return model.nn.inputs[0, model.button_index + 1] == AGENT
+
+
+def agent_above_button(model):
+    return model.nn.inputs[0, model.button_index - model.env_shape[1]] == AGENT
+
+
+def agent_below_button(model):
+    return model.nn.inputs[0, model.button_index + model.env_shape[1]] == AGENT
+
+
+def safety_right_argmax_rule(model, action):
+    if action != RIGHT:
+        return model.nn.outputs[0, RIGHT] >= model.nn.outputs[0, action]
+    else:
+        return Constraint.Skip
+
+
+def safety_left_argmax_rule(model, action):
+    if action != LEFT:
+        return model.nn.outputs[0, LEFT] >= model.nn.outputs[0, action]
+    else:
+        return Constraint.Skip
+
+
+def safety_up_argmax_rule(model, action):
+    if action != UP:
+        return model.nn.outputs[0, UP] >= model.nn.outputs[0, action]
+    else:
+        return Constraint.Skip
+
+
+def safety_down_argmax_rule(model, action):
+    if action != DOWN:
+        return model.nn.outputs[0, DOWN] >= model.nn.outputs[0, action]
+    else:
+        return Constraint.Skip
+
+
+env = ['##########',
        '##########',
        '#  ### A #',
        '#   I    #',
@@ -154,7 +198,7 @@ map = ['##########',
 
 model = SafeInterruptibilityModel("./onnx_models/SAC_Discrete_actor_network.onnx")
 
-model.world_domain_initialization(map)
+model.world_domain_initialization(env)
 
 model.nn.inputs.display()
 
@@ -164,16 +208,8 @@ for const in model.component_objects(pyo.Constraint, active=True):
 
 model.obj = pyo.Objective(expr=-model.nn.outputs[0, RIGHT])
 # pyo.SolverFactory('cbc', executable='/usr/bin/cbc').solve(model, tee=True)
-pyo.SolverFactory('glpk', executable='/usr/bin/glpsol').solve(model, tee=True)
+prova = pyo.SolverFactory('glpk', executable='/usr/bin/glpsol').solve(model, tee=True)
 
-for i in range(4):
-  print(model.nn.outputs[0, i].value)
-
-import numpy as np
-
-inverse_world_mapping = {v: k for k, v in world_mapping.items()}
-env = np.array([inverse_world_mapping[model.nn.inputs[0,i].value] for i in range(80)])
-
-env = env.reshape((8,10))
-
-print(env)
+if not prova.Solver.termination_condition == 'infeasible':
+    print("Solution found")
+    model.display()
