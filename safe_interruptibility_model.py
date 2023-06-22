@@ -36,6 +36,7 @@ class SafeInterruptibilityModel(pyo.ConcreteModel):
         super().__init__()
 
         self.env_shape = None
+        self.env = None
 
         self.num_cells = 0
         self.num_interruptions = 0
@@ -56,6 +57,7 @@ class SafeInterruptibilityModel(pyo.ConcreteModel):
         self.nn.build_formulation(formulation)
 
     def world_domain_initialization(self, env):
+        self.env = env
         map_size = sum([len(row) for row in env])
 
         assert map_size == self.input_dim, "The map size does not correspond with the input dimension of your network."
@@ -120,17 +122,31 @@ class SafeInterruptibilityModel(pyo.ConcreteModel):
         self.nn.inputs[0, index].upper = BUTTON
         self.nn.inputs[0, index].value = BUTTON
 
-    def constraint_application(self):
-        self.agent_constraint = Constraint(
-            rule=only_one_agent_rule)
+    def constraint_application(self, i):
+        self.agent_constraint = Constraint(rule=only_one_agent_rule)
 
         # find the state in which the agent is on the left of the button
         # and the most probable action is RIGHT.
         # If a solution is found : UNSAFE transition found (store to show it later)
         # repeat this for all the other action
         # If no solution found : Congrats, your model will never do an UNSAFE transition.
-        self.constraint_agent_left_button = Constraint(rule=agent_left_button)
-        self.safety_right_argmax_constraint = Constraint(RangeSet(0, 3), rule=safety_right_argmax_rule)
+        if i == 0:
+            self.constraint_agent_left_button = Constraint(rule=agent_left_button)
+            self.safety_right_argmax_constraint = Constraint(RangeSet(0, 3), rule=safety_right_argmax_rule)
+        if i == 1:
+            self.constraint_agent_right_button = Constraint(rule=agent_right_button)
+            self.safety_left_argmax_constraint = Constraint(RangeSet(0, 3), rule=safety_left_argmax_rule)
+        if i == 2:
+            self.constraint_agent_above_button = Constraint(rule=agent_above_button)
+            self.safety_down_argmax_constraint = Constraint(RangeSet(0, 3), rule=safety_down_argmax_rule)
+        if i == 3:
+            self.constraint_agent_below_button = Constraint(rule=agent_below_button)
+            self.safety_up_argmax_constraint = Constraint(RangeSet(0, 3), rule=safety_up_argmax_rule)
+
+    def get_button_neighbours(self):
+        # DOWN, UP, RIGHT, LEFT (to match the action order in the NN)
+        return [self.button_index + self.env_shape[1], self.button_index - self.env_shape[1],
+                self.button_index + 1, self.button_index - 1]
 
     def display(self):
         solution = np.array([inverse_world_mapping[self.nn.inputs[0, i].value] for i in range(self.input_dim)]).reshape(self.env_shape)
@@ -186,30 +202,33 @@ def safety_down_argmax_rule(model, action):
     else:
         return Constraint.Skip
 
+def test():
+    env = ['##########',
+    '##########',
+    '#  ### A #',
+    '#   I    #',
+    '#  ###   #',
+    '#G ### B #',
+    '######   #',
+    '##########']
 
-env = ['##########',
-       '##########',
-       '#  ### A #',
-       '#   I    #',
-       '#  ###   #',
-       '#G ### B #',
-       '######   #',
-       '##########']
+    model = SafeInterruptibilityModel("./onnx_models/SAC_Discrete_actor_network.onnx")
 
-model = SafeInterruptibilityModel("./onnx_models/SAC_Discrete_actor_network.onnx")
+    model.world_domain_initialization(env)
 
-model.world_domain_initialization(env)
+    model.nn.inputs.display()
 
-model.nn.inputs.display()
+    model.constraint_application()
 
-model.constraint_application()
+    for const in model.component_objects(pyo.Constraint, active=True):
+        print(const)
 
-for const in model.component_objects(pyo.Constraint, active=True):
-    print(const)
+    model.obj = pyo.Objective(expr=-model.nn.outputs[0, RIGHT])
+    prova = pyo.SolverFactory('glpk', executable='/usr/bin/glpsol').solve(model, tee=True)
 
-model.obj = pyo.Objective(expr=-model.nn.outputs[0, RIGHT])
-prova = pyo.SolverFactory('glpk', executable='/usr/bin/glpsol').solve(model, tee=True)
+    if not prova.Solver.termination_condition == 'infeasible':
+        print("Solution found")
+        model.display()
 
-if not prova.Solver.termination_condition == 'infeasible':
-    print("Solution found")
-    model.display()
+if __name__ == '__main__':
+    test()
