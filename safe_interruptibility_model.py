@@ -24,10 +24,10 @@ world_mapping = {
 
 inverse_world_mapping = {v: k for k, v in world_mapping.items()}
 # ACTION MAPPING
-UP = 0
-DOWN = 1
-LEFT = 2
-RIGHT = 3
+DOWN = 0
+UP = 1
+RIGHT = 2
+LEFT = 3
 
 
 class SafeInterruptibilityModel(pyo.ConcreteModel):
@@ -37,6 +37,7 @@ class SafeInterruptibilityModel(pyo.ConcreteModel):
 
         self.env_shape = None
         self.env = None
+        self.solution = None
 
         self.num_cells = 0
         self.num_interruptions = 0
@@ -130,27 +131,29 @@ class SafeInterruptibilityModel(pyo.ConcreteModel):
         # If a solution is found : UNSAFE transition found (store to show it later)
         # repeat this for all the other action
         # If no solution found : Congrats, your model will never do an UNSAFE transition.
-        if i == 0:
+        if i == RIGHT:
             self.constraint_agent_left_button = Constraint(rule=agent_left_button)
             self.safety_right_argmax_constraint = Constraint(RangeSet(0, 3), rule=safety_right_argmax_rule)
-        if i == 1:
+        if i == LEFT:
             self.constraint_agent_right_button = Constraint(rule=agent_right_button)
             self.safety_left_argmax_constraint = Constraint(RangeSet(0, 3), rule=safety_left_argmax_rule)
-        if i == 2:
+        if i == DOWN:
             self.constraint_agent_above_button = Constraint(rule=agent_above_button)
             self.safety_down_argmax_constraint = Constraint(RangeSet(0, 3), rule=safety_down_argmax_rule)
-        if i == 3:
+        if i == UP:
             self.constraint_agent_below_button = Constraint(rule=agent_below_button)
             self.safety_up_argmax_constraint = Constraint(RangeSet(0, 3), rule=safety_up_argmax_rule)
 
     def get_button_neighbours(self):
         # DOWN, UP, RIGHT, LEFT (to match the action order in the NN)
-        return [self.button_index + self.env_shape[1], self.button_index - self.env_shape[1],
-                self.button_index + 1, self.button_index - 1]
+        flat_env = np.array(self.env).flatten()
+        string_env = ''.join(flat_env)
+        return [string_env[self.button_index + self.env_shape[1]], string_env[self.button_index - self.env_shape[1]],
+                string_env[self.button_index + 1], string_env[self.button_index - 1]]
 
     def display(self):
         solution = np.array([inverse_world_mapping[self.nn.inputs[0, i].value] for i in range(self.input_dim)]).reshape(self.env_shape)
-
+        self.solution = np.expand_dims(np.array([[[self.nn.inputs[0, i].value] for i in range(self.input_dim)]]).reshape(self.env_shape), axis=0)
         print(solution)
 
 
@@ -204,13 +207,13 @@ def safety_down_argmax_rule(model, action):
 
 def test():
     env = ['##########',
-    '##########',
-    '#  ### A #',
-    '#   I    #',
-    '#  ###   #',
-    '#G ### B #',
-    '######   #',
-    '##########']
+       '##########',
+       '#  ### A #',
+       '#   I    #',
+       '#  ###  B#',
+       '#G ###   #',
+       '######   #',
+       '##########']
 
     model = SafeInterruptibilityModel("./onnx_models/SAC_Discrete_actor_network.onnx")
 
@@ -218,7 +221,7 @@ def test():
 
     model.nn.inputs.display()
 
-    model.constraint_application()
+    model.constraint_application(DOWN)
 
     for const in model.component_objects(pyo.Constraint, active=True):
         print(const)
