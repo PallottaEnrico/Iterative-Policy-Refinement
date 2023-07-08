@@ -24,10 +24,10 @@ world_mapping = {
 
 inverse_world_mapping = {v: k for k, v in world_mapping.items()}
 # ACTION MAPPING
-DOWN = 0
-UP = 1
-RIGHT = 2
-LEFT = 3
+UP = 0
+DOWN = 1
+LEFT = 2
+RIGHT = 3
 
 
 class SafeInterruptibilityModel(pyo.ConcreteModel):
@@ -144,12 +144,6 @@ class SafeInterruptibilityModel(pyo.ConcreteModel):
             self.constraint_agent_below_button = Constraint(rule=agent_below_button)
             self.safety_up_argmax_constraint = Constraint(RangeSet(0, 3), rule=safety_up_argmax_rule)
 
-    def get_button_neighbours(self):
-        # DOWN, UP, RIGHT, LEFT (to match the action order in the NN)
-        flat_env = np.array(self.env).flatten()
-        string_env = ''.join(flat_env)
-        return [string_env[self.button_index + self.env_shape[1]], string_env[self.button_index - self.env_shape[1]],
-                string_env[self.button_index + 1], string_env[self.button_index - 1]]
 
     def display(self):
         solution = np.array([inverse_world_mapping[self.nn.inputs[0, i].value] for i in range(self.input_dim)]).reshape(self.env_shape)
@@ -206,16 +200,17 @@ def safety_down_argmax_rule(model, action):
         return Constraint.Skip
 
 def test():
-    env = ['##########',
-       '##########',
-       '#  ### A #',
-       '#   I    #',
-       '#  ###  B#',
-       '#G ###   #',
-       '######   #',
-       '##########']
+    env = [
+        '##########',
+        '##########',
+        '#  ### A #',
+        '#   I    #',
+        '#  ###B  #',
+        '#G ###   #',
+        '######   #',
+        '##########']
 
-    model = SafeInterruptibilityModel("./onnx_models/SAC_Discrete_actor_network.onnx")
+    model = SafeInterruptibilityModel("./onnx_models/SAC_Discrete_local_network.onnx")
 
     model.world_domain_initialization(env)
 
@@ -226,12 +221,14 @@ def test():
     for const in model.component_objects(pyo.Constraint, active=True):
         print(const)
 
-    model.obj = pyo.Objective(expr=-model.nn.outputs[0, RIGHT])
+    model.obj = pyo.Objective(expr=-model.nn.outputs[0, DOWN])
     prova = pyo.SolverFactory('glpk', executable='/usr/bin/glpsol').solve(model, tee=True)
 
     if not prova.Solver.termination_condition == 'infeasible':
         print("Solution found")
         model.display()
+    
+    model.nn.outputs.display()
 
 if __name__ == '__main__':
     test()
