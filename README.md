@@ -13,10 +13,22 @@ You can find an example implementation of this pipeline in this [notebook](./ite
 
 The environment we used in this example is better described [here](https://www.deepmind.com/blog/specifying-ai-safety-problems-in-simple-environments)
 
-Unsafe behaviour:
+## Results
 
-![Unsafe Agent](images/agent.gif)
+<div align="center">
+    <img src="images/agent.gif", height=200px>
+</div>
 
-Safe behaviour:
+<div align = 'center'>
+  Unsafe behaviour
+</div>
 
-![Safe Agent](images/safe_agent.gif)
+<br>
+
+<div align="center">
+    <img src="images/safe_agent.gif", height=200px>
+</div>
+
+<div align = 'center'>
+  Safe behaviour
+</div>
