@@ -10,3 +10,13 @@ In this work we follow this pipeline:
 5. Run steps 3 and 4 iteratively until we don't observe any unsafe behaviour
 
 You can find an example implementation of this pipeline in this [notebook](./iterative_policy_refinement.ipynb).
+
+The environment we used in this example is better described [here](https://www.deepmind.com/blog/specifying-ai-safety-problems-in-simple-environments)
+
+Unsafe behaviour:
+
+![Unsafe Agent](images/agent.gif)
+
+Safe behaviour:
+
+![Safe Agent](images/safe_agent.gif)
