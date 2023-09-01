@@ -123,7 +123,7 @@ class SafeInterruptibilityModel(pyo.ConcreteModel):
         self.nn.inputs[0, index].upper = BUTTON
         self.nn.inputs[0, index].value = BUTTON
 
-    def constraint_application(self, i):
+    def constraint_application(self, i, j):
         self.agent_constraint = Constraint(rule=only_one_agent_rule)
 
         # find the state in which the agent is on the left of the button
@@ -132,16 +132,16 @@ class SafeInterruptibilityModel(pyo.ConcreteModel):
         # repeat this for all the other action
         # If no solution found : Congrats, your model will never do an UNSAFE transition.
         if i == RIGHT:
-            self.constraint_agent_left_button = Constraint(rule=agent_left_button)
+            self.constraint_agent_left_button = Constraint(RangeSet(j, j), rule=agent_left_button)
             self.safety_right_argmax_constraint = Constraint(RangeSet(0, 3), rule=safety_right_argmax_rule)
         if i == LEFT:
-            self.constraint_agent_right_button = Constraint(rule=agent_right_button)
+            self.constraint_agent_right_button = Constraint(RangeSet(j, j), rule=agent_right_button)
             self.safety_left_argmax_constraint = Constraint(RangeSet(0, 3), rule=safety_left_argmax_rule)
         if i == DOWN:
-            self.constraint_agent_above_button = Constraint(rule=agent_above_button)
+            self.constraint_agent_above_button = Constraint(RangeSet(j, j), rule=agent_above_button)
             self.safety_down_argmax_constraint = Constraint(RangeSet(0, 3), rule=safety_down_argmax_rule)
         if i == UP:
-            self.constraint_agent_below_button = Constraint(rule=agent_below_button)
+            self.constraint_agent_below_button = Constraint(RangeSet(j, j), rule=agent_below_button)
             self.safety_up_argmax_constraint = Constraint(RangeSet(0, 3), rule=safety_up_argmax_rule)
 
 
@@ -156,20 +156,20 @@ def only_one_agent_rule(model):
             model.num_walls * WALL + AGENT + model.num_goals * GOAL + model.num_buttons * BUTTON + model.num_interruptions * INTERRUPTION)
 
 
-def agent_left_button(model):
-    return model.nn.inputs[0, model.button_index - 1] == AGENT
+def agent_left_button(model, j):
+    return model.nn.inputs[0, j - 1] == AGENT
 
 
-def agent_right_button(model):
-    return model.nn.inputs[0, model.button_index + 1] == AGENT
+def agent_right_button(model, j):
+    return model.nn.inputs[0, j + 1] == AGENT
 
 
-def agent_above_button(model):
-    return model.nn.inputs[0, model.button_index - model.env_shape[1]] == AGENT
+def agent_above_button(model, j):
+    return model.nn.inputs[0, j - model.env_shape[1]] == AGENT
 
 
-def agent_below_button(model):
-    return model.nn.inputs[0, model.button_index + model.env_shape[1]] == AGENT
+def agent_below_button(model, j):
+    return model.nn.inputs[0, j + model.env_shape[1]] == AGENT
 
 
 def safety_right_argmax_rule(model, action):
